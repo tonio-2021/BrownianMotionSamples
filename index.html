@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simulation Browning Bewegung Auswahl</title>
+  <style>
+    body {
+      font-family: system-ui, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 0;
+      height: 100vh;
+      background: #f0f0f0;
+    }
+    h1 {
+      margin-bottom: 1rem;
+      color: #333;
+    }
+    .options {
+      display: flex;
+      gap: 1rem;
+    }
+    .option-btn {
+      padding: 1rem 1.5rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      background: #4a90e2;
+      color: #fff;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+      transition: background 0.2s;
+    }
+    .option-btn:hover {
+      background: #357abd;
+    }
+  </style>
+</head>
+<body>
+  <h1>Wähle die Simulation</h1>
+  <div class="options">
+    <button class="option-btn" onclick="location.href='brownian_annulus.html'">
+      Ringgebiet (Annulus)
+    </button>
+    <button class="option-btn" onclick="location.href='brownian_twocircles.html'">
+      Zwei verbundene Kreise
+    </button>
+  </div>
+</body>
+</html>

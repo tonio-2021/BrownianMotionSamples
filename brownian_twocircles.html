@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Brownsche Bewegung – zwei verbundene Kreise</title>
+
+  <style>
+    body{
+      margin:0; padding:0;
+      display:flex; justify-content:center; align-items:flex-start;
+      height:100vh; background:#f5f5f5; font-family:system-ui,sans-serif;
+    }
+    #wrapper{ display:flex; gap:1rem; margin:1rem; }
+    canvas{
+      border:1px solid #ccc; background:#fff;
+      box-shadow:0 2px 6px rgba(0,0,0,.1);
+    }
+    #controls{ display:flex; flex-direction:column; gap:.5rem; }
+    .btn{
+      padding:.5rem 1rem; font-size:.9rem; cursor:pointer;
+      border:1px solid #666; border-radius:.3rem; background:#eee;
+      transition:background .2s; text-align:left;
+    }
+    .btn:hover{ background:#ddd; }
+  </style>
+</head>
+<body>
+  <div id="wrapper">
+    <canvas id="domainCanvas" width="600" height="600"></canvas>
+
+    <div id="controls">
+      <button id="newPathBtn"   class="btn" title="Simuliere einen neuen Pfad ab demselben Startpunkt">Neuer Pfad</button>
+      <button id="newStartBtn"  class="btn" title="Wähle einen neuen zufälligen Startpunkt">Neuer Startpunkt</button>
+      <button id="togglePathsBtn" class="btn" title="Zeige/verstecke vollständige Pfade">Pfade Verstecken</button>
+      <button id="resetBtn"     class="btn" title="Setze Startpunkt und alle Pfade zurück">Reset</button>
+    </div>
+  </div>
+
+  <script>
+  // ---------- Canvas-Konstanten ----------
+  const canvas   = document.getElementById('domainCanvas');
+  const ctx      = canvas.getContext('2d');
+  const WIDTH    = canvas.width;
+  const HEIGHT   = canvas.height;
+
+  // ---------- Geometrie ----------
+  const R     = 0.4;   // Kreisradius
+  const D     = 0.7;   // Abstand der Kreismittelpunkte
+  const G_W   = 0.08;  // Gangbreite (h)
+  // const G_L   = 0.20;  // Ganglänge (L) - This parameter is problematic as used in original inDomain.
+                        // The corridor length is now derived from R, D, G_W.
+
+  const C1 = [ -D/2, 0 ]; // Center of left circle
+  const C2 = [  D/2, 0 ]; // Center of right circle
+
+  const SCALE = WIDTH * 0.45; // Welt-→Canvas-Skalierung
+
+  const toX = x => WIDTH/2  + x * SCALE;
+  const toY = y => HEIGHT/2 - y * SCALE; // y is inverted for canvas
+
+  // ---------- Rand + Füllung des Domain-Gebiets ----------
+  function drawDomain(){
+    ctx.clearRect(0,0,WIDTH,HEIGHT);
+    ctx.lineWidth   = 2;
+    ctx.strokeStyle = '#666';
+    ctx.fillStyle   = '#f4f4f4';
+
+    const halfH = G_W/2; // h/2
+
+    if (halfH >= R) {
+        // Corridor width is too large for the circle radius, domain is ill-defined or empty.
+        ctx.font = "14px Arial";
+        ctx.fillStyle = "red";
+        ctx.textAlign = "center";
+        ctx.fillText("Geometrie ungültig: Gangbreite (G_W) zu groß für Kreisradius (R).", WIDTH/2, HEIGHT/2);
+        return;
+    }
+    const dxCut = Math.sqrt(R*R - halfH*halfH); // x-distance from circle center to corridor connection
+
+    // Path2D for the *outer* border as a single continuous path
+    const border = new Path2D();
+
+    // Points defining the corridor connections:
+    // Top-right of C1's opening / Top-left of corridor
+    const P_C1_TR_x = C1[0] + dxCut;
+    const P_C1_TR_y = halfH;
+    // Top-left of C2's opening / Top-right of corridor
+    const P_C2_TL_x = C2[0] - dxCut;
+    const P_C2_TL_y = halfH;
+    // Bottom-left of C2's opening / Bottom-right of corridor
+    const P_C2_BL_x = C2[0] - dxCut;
+    const P_C2_BL_y = -halfH;
+    // Bottom-right of C1's opening / Bottom-left of corridor
+    const P_C1_BR_x = C1[0] + dxCut;
+    const P_C1_BR_y = -halfH;
+
+    // Angles for the arcs (atan2(y,x) relative to circle center)
+    // For C1 (left circle):
+    const ang_C1_TR = Math.atan2(P_C1_TR_y - C1[1], P_C1_TR_x - C1[0]); // Angle of top-right connection point
+    const ang_C1_BR = Math.atan2(P_C1_BR_y - C1[1], P_C1_BR_x - C1[0]); // Angle of bottom-right connection point
+
+    // For C2 (right circle):
+    const ang_C2_TL = Math.atan2(P_C2_TL_y - C2[1], P_C2_TL_x - C2[0]); // Angle of top-left connection point
+    const ang_C2_BL = Math.atan2(P_C2_BL_y - C2[1], P_C2_BL_x - C2[0]); // Angle of bottom-left connection point
+
+    border.moveTo(toX(P_C1_TR_x), toY(P_C1_TR_y));       // Start at top-left of corridor segment
+    border.lineTo(toX(P_C2_TL_x), toY(P_C2_TL_y));       // Line: Top edge of corridor
+
+    // Arc for the right circle (from P_C2_TL to P_C2_BL, clockwise along outer edge)
+    border.arc(toX(C2[0]), toY(C2[1]), R * SCALE, ang_C2_TL, ang_C2_BL, false); // false for clockwise
+
+    border.lineTo(toX(P_C1_BR_x), toY(P_C1_BR_y));       // Line: Bottom edge of corridor
+
+    // Arc for the left circle (from P_C1_BR to P_C1_TR, clockwise along outer edge)
+    border.arc(toX(C1[0]), toY(C1[1]), R * SCALE, ang_C1_BR, ang_C1_TR, false); // false for clockwise
+
+    border.closePath(); // Close the path to ensure it's a single shape
+
+    // Zeichnen
+    ctx.fill(border);
+    ctx.stroke(border);
+  }
+
+  // ---------- Punkt-Inside-Domain ----------
+  function inDomain(x,y){
+    const halfH = G_W/2;
+    const R_squared = R*R;
+
+    // Check if R is too small for G_W (corridor width)
+    if (halfH >= R) { // If G_W/2 == R, dxCut is 0. If G_W/2 > R, sqrt is NaN.
+        return false; // Domain is ill-defined or empty
+    }
+    const dxCut = Math.sqrt(R_squared - halfH*halfH);
+
+    // x-coordinates where the "mouths" of the Pac-Man shapes open
+    const x_mouth_C1_opens_at = C1[0] + dxCut; // For left circle, mouth is to its right
+    const x_mouth_C2_opens_at = C2[0] - dxCut; // For right circle, mouth is to its left
+
+    // 1. Check if in the central corridor/overlap region
+    // This region is defined by abs(y) <= halfH.
+    // Its x-span depends on whether circles overlap or have a gap bridged by corridor.
+    // x_mouth_C2_opens_at will be less than x_mouth_C1_opens_at if circles overlap at mouths or form a channel.
+    if (Math.abs(y) <= halfH) {
+        // If D < 2*dxCut (current parameters: 0.7 < ~0.796), then C1_opens > C2_opens (mouths overlap)
+        // Corridor is from x_mouth_C2_opens_at to x_mouth_C1_opens_at
+        // If D > 2*dxCut, then C1_opens < C2_opens (gap between mouths)
+        // Corridor is from x_mouth_C1_opens_at to x_mouth_C2_opens_at
+        const corridor_x_min = Math.min(x_mouth_C1_opens_at, x_mouth_C2_opens_at);
+        const corridor_x_max = Math.max(x_mouth_C1_opens_at, x_mouth_C2_opens_at);
+
+        if (x >= corridor_x_min && x <= corridor_x_max) {
+            // If D == 2*dxCut, then x_mouth_C1_opens_at == x_mouth_C2_opens_at, corridor has zero length here.
+            // This check correctly covers the actual connecting channel.
+            return true;
+        }
+    }
+
+    // 2. Check if in the left "Pac-Man" body
+    const d1_sq = (x - C1[0])*(x - C1[0]) + (y - C1[1])*(y - C1[1]);
+    if (d1_sq <= R_squared) {
+        // Point is within the radius of C1. Check it's not in C1's "mouth".
+        // Mouth of C1 is where x > x_mouth_C1_opens_at AND abs(y) <= halfH.
+        if (!(x > x_mouth_C1_opens_at && Math.abs(y) <= halfH)) {
+            return true;
+        }
+    }
+
+    // 3. Check if in the right "Pac-Man" body
+    const d2_sq = (x - C2[0])*(x - C2[0]) + (y - C2[1])*(y - C2[1]);
+    if (d2_sq <= R_squared) {
+        // Point is within the radius of C2. Check it's not in C2's "mouth".
+        // Mouth of C2 is where x < x_mouth_C2_opens_at AND abs(y) <= halfH.
+        if (!(x < x_mouth_C2_opens_at && Math.abs(y) <= halfH)) {
+            return true;
+        }
+    }
+
+    return false;
+  }
+
+  // ---------- Startpunkterzeugung (Rejection) ----------
+  function randomStart(){
+    // Bounding box for the entire domain
+    const minX = C1[0] - R;
+    const maxX = C2[0] + R;
+    const minY = -R;
+    const maxY = R;
+
+    while(true){
+      const x = minX + Math.random() * (maxX - minX);
+      const y = minY + Math.random() * (maxY - minY);
+      if(inDomain(x,y)) return [x,y];
+    }
+  }
+
+  // ---------- Standardnormal-Zufall (Box–Muller) ----------
+  function randn(){
+    let u=0,v=0;
+    while(u === 0) u=Math.random(); // Ensure u is not 0 to avoid log(0)
+    while(v === 0) v=Math.random(); // Technically v doesn't need to be non-zero for cos, but good practice
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  }
+
+  // ---------- Brownsche Simulation bis Austritt ----------
+  function simulateBrownian(x0, dt=.001, maxSteps=1e5){
+    const path=[x0.slice()]; // Use slice to copy the start point array
+    let [x,y]=x0;
+    for(let i=0;i<maxSteps;i++){
+      const dx = Math.sqrt(dt)*randn();
+      const dy = Math.sqrt(dt)*randn();
+      const nx = x + dx;
+      const ny = y + dy;
+      if(!inDomain(nx,ny)) { // Particle hits absorbing boundary
+        // Optional: add the point just outside the boundary for a more complete path visual
+        // path.push([nx,ny]);
+        break;
+      }
+      x=nx; y=ny;
+      path.push([x,y]);
+    }
+    return path;
+  }
+
+  // ---------- Zeichenroutine Pfade ----------
+  const colours = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628'];
+  let startPoint=null, paths=[], showPaths=true;
+
+  function drawAll(){
+    drawDomain(); // This will clear canvas and draw the base shape
+
+    if (paths.length > 0 && startPoint) { // Only draw paths if there are any
+        paths.forEach( (p,i)=>{
+          const col = colours[i % colours.length];
+
+          /* Pfad */
+          if(showPaths && p.length > 1){ // Ensure path has at least two points to draw a line
+            ctx.strokeStyle=col; ctx.lineWidth=1.2;
+            ctx.beginPath();
+            ctx.moveTo( toX(p[0][0]), toY(p[0][1]) );
+            p.slice(1).forEach(pt=>ctx.lineTo(toX(pt[0]), toY(pt[1])));
+            ctx.stroke();
+          }
+
+          /* Start / Endpunkte */
+          const mark = ([px,py], r, fillStyle)=>{
+            ctx.beginPath();
+            ctx.arc(toX(px),toY(py),r,0,2*Math.PI);
+            ctx.fillStyle=fillStyle;
+            ctx.fill();
+          };
+
+          if (p.length > 0) {
+            mark(p[0],             6, '#000'); // Start point of this specific path
+            mark(p[p.length-1],    4, col);    // End point of this specific path
+          }
+        });
+    } else if (startPoint) { // If there's a startPoint but no paths yet, draw the startPoint
+        const mark = ([px,py], r, fillStyle)=>{
+            ctx.beginPath();
+            ctx.arc(toX(px),toY(py),r,0,2*Math.PI);
+            ctx.fillStyle=fillStyle;
+            ctx.fill();
+        };
+        mark(startPoint, 6, '#000');
+    }
+  }
+
+  // ---------- Button-Callbacks ----------
+  document.getElementById('newPathBtn').onclick = ()=>{
+    if(!startPoint) {
+        startPoint = randomStart();
+        if (!startPoint) { // Could happen if randomStart fails (e.g. invalid geometry)
+            console.error("Failed to generate a random start point. Check geometry.");
+            return;
+        }
+    }
+    paths.push( simulateBrownian(startPoint) );
+    if (paths.length > colours.length * 3) { // Limit paths to avoid performance issues / too many colours
+        paths.shift(); // Remove oldest path
+    }
+    drawAll();
+  };
+
+  document.getElementById('newStartBtn').onclick = ()=>{
+    startPoint = randomStart();
+    if (!startPoint) {
+        console.error("Failed to generate a random start point for NewStartBtn. Check geometry.");
+        return;
+    }
+    // Paths are not cleared here, new paths will start from this new point.
+    // If you want to clear old paths when getting a new start point, add: paths = [];
+    drawAll();
+  };
+
+  document.getElementById('togglePathsBtn').onclick = e=>{
+    showPaths = !showPaths;
+    e.target.textContent = showPaths ? 'Pfade Verstecken' : 'Pfade Zeigen';
+    drawAll();
+  };
+
+  document.getElementById('resetBtn').onclick = ()=>{
+    startPoint=null;
+    paths=[];
+    showPaths=true;
+    document.getElementById('togglePathsBtn').textContent='Pfade Verstecken';
+    drawAll(); // Will just draw the empty domain
+  };
+
+  // ---------- Initiales Rendering ----------
+  drawDomain(); // Initial call to draw the domain when the page loads
+  </script>
+</body>
+</html>
