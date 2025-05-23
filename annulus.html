@@ -15,8 +15,9 @@
 <body>
   <h1>Brownsche Bewegung in einem Ringgebiet</h1>
   <div id="controls">
-    <button id="btnNew">Neuer Pfad</button>
-    <button id="btnToggle">Pfade aus‑/einblenden</button>
+    <button id="btnMultiplier">1×</button>
+    <button id="btnNew">Neuer Pfad</button>
+    <button id="btnToggle">Pfade aus-/einblenden</button>
     <button id="btnReset">Reset</button>
   </div>
   <canvas id="canvas" width="600" height="600"></canvas>
@@ -34,13 +35,22 @@
   let start     = {...startDefault};
   let dragging  = false;
   let showPaths = true;
-  const paths   = [];    // Array [{pts: [ {x,y}, …], end:{x,y}}]
+  const paths   = [];    // Array [{pts: [ {x,y}, …], end:{x,y}}]
 
   const STEP_SCALE = 3;       // Schrittweite (Standardabw.) in Pixeln
-  const MAX_STEPS  = 20000;   // Hard‑Limit gegen Endlosschleife
+  const MAX_STEPS  = 20000;   // Hard-Limit gegen Endlosschleife
+
+  // ---------------- Multiplikator-Button ----------------
+  const multipliers = [1,3,5,10,100];
+  let multIndex = 0; // zeigt auf aktuellen Eintrag in multipliers
+  const btnMult = document.getElementById('btnMultiplier');
+  btnMult.addEventListener('click', () => {
+    multIndex = (multIndex + 1) % multipliers.length;
+    btnMult.textContent = multipliers[multIndex] + '×';
+  });
 
   // ---------------- Hilfsfunktionen ----------------
-  function randn() {          // Box‑Muller (N(0,1))
+  function randn() {          // Box-Muller (N(0,1))
     let u=0, v=0;
     while(u===0) u = Math.random();
     while(v===0) v = Math.random();
@@ -77,16 +87,22 @@
   function draw() {
     ctx.clearRect(0,0,W,H);
 
-    // Annulus (gefüllt)
+    // Annulus zeichnen – mit even-odd Fill-Regel, um die Trennlinie zu vermeiden
     ctx.save();
     ctx.fillStyle = 'rgba(100,100,200,0.1)';
     ctx.beginPath();
     ctx.arc(center.x, center.y, rOuter, 0, Math.PI*2);
-    ctx.arc(center.x, center.y, rInner, 0, Math.PI*2, true);  // Loch herausstanzen
-    ctx.closePath();
-    ctx.fill();
-    ctx.strokeStyle = '#000';
+    ctx.arc(center.x, center.y, rInner, 0, Math.PI*2, true); // Loch umgekehrt
+    ctx.fill('evenodd');
+
+    // Ränder getrennt stroken, damit keine Verbindungs­linie entsteht
     ctx.lineWidth = 1;
+    ctx.strokeStyle = '#000';
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, rOuter, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, rInner, 0, Math.PI*2);
     ctx.stroke();
     ctx.restore();
 
@@ -119,9 +135,12 @@
     ctx.stroke();
   }
 
-  // ---------------- UI‑Events ----------------
+  // ---------------- UI-Events ----------------
   document.getElementById('btnNew').addEventListener('click', () => {
-    paths.push(simulate());
+    const count = multipliers[multIndex];
+    for (let i=0; i<count; i++) {
+      paths.push(simulate());
+    }
     draw();
   });
 
@@ -152,7 +171,7 @@
     if (inDomain(pos)) {
       start.x = pos.x;
       start.y = pos.y;
-      paths.length = 0;   // Pfade invalid → löschen
+      paths.length = 0;   // alte Pfade ungültig
       draw();
     }
   });

@@ -1,53 +1,56 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Simulation Browning Bewegung Auswahl</title>
+  <title>Brownscher Pfad‑Simulator – Auswahl</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <style>
-    body {
-      font-family: system-ui, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      margin: 0;
-      height: 100vh;
-      background: #f0f0f0;
+    body{
+      margin:0;
+      display:flex;
+      flex-direction:column;
+      align-items:center;
+      gap:1rem;
+      padding:1rem;
+      font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+      background:#fafafa;
     }
-    h1 {
-      margin-bottom: 1rem;
-      color: #333;
+    #nav{display:flex;gap:.5rem;flex-wrap:wrap}
+    button{
+      padding:.5rem 1rem;
+      border:none;
+      border-radius:6px;
+      background:#444;color:#fff;font-size:1rem;
+      cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2);
+      transition:background .2s;
     }
-    .options {
-      display: flex;
-      gap: 1rem;
-    }
-    .option-btn {
-      padding: 1rem 1.5rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 0.5rem;
-      cursor: pointer;
-      background: #4a90e2;
-      color: #fff;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-      transition: background 0.2s;
-    }
-    .option-btn:hover {
-      background: #357abd;
-    }
+    button.active,button:hover{background:#222;}
+    iframe{border:1px solid #ccc;border-radius:12px;width:600px;height:700px;}
   </style>
 </head>
 <body>
-  <h1>Wähle die Simulation</h1>
-  <div class="options">
-    <button class="option-btn" onclick="location.href='brownian_annulus.html'">
-      Ringgebiet (Annulus)
-    </button>
-    <button class="option-btn" onclick="location.href='brownian_twocircles.html'">
-      Zwei verbundene Kreise
-    </button>
+  <h1>Brownscher Pfad‑Simulator</h1>
+
+  <div id="nav">
+    <button data-file="annulus.html" class="active">Annulus</button>
+    <button data-file="slit_disc.html">Schlitzscheibe</button>
   </div>
+
+  <iframe id="viewer" src="annulus.html" title="Simulation"></iframe>
+
+  <script>
+  (() => {
+    const viewer = document.getElementById('viewer');
+    const buttons = document.querySelectorAll('#nav button');
+
+    buttons.forEach(btn => {
+      btn.addEventListener('click', () => {
+        const file = btn.dataset.file;
+        viewer.src = file;
+        buttons.forEach(b => b.classList.toggle('active', b === btn));
+      });
+    });
+  })();
+  </script>
 </body>
 </html>
