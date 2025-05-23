@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <title>Brownsche Bewegung im Annulus – interaktiv</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body{margin:0;display:flex;flex-direction:column;align-items:center;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;gap:1rem;padding:1rem;background:#fafafa;}
+    #controls{display:flex;gap:.5rem;flex-wrap:wrap}
+    button{padding:.5rem 1rem;border:none;border-radius:6px;background:#444;color:#fff;font-size:1rem;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2);transition:background .2s}
+    button:hover{background:#222;}
+    canvas{border:1px solid #ccc;border-radius:12px;touch-action:none;}
+  </style>
+</head>
+<body>
+  <h1>Brownsche Bewegung in einem Ringgebiet</h1>
+  <div id="controls">
+    <button id="btnNew">Neuer Pfad</button>
+    <button id="btnToggle">Pfade aus‑/einblenden</button>
+    <button id="btnReset">Reset</button>
+  </div>
+  <canvas id="canvas" width="600" height="600"></canvas>
+
+<script>
+(() => {
+  const canvas = document.getElementById('canvas');
+  const ctx     = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const center  = {x: W/2, y: H/2};
+  const rOuter  = 250;   // äußerer Radius [px]
+  const rInner  = 100;   // innerer Radius [px]
+  const startDefault = {x: center.x, y: center.y + (rInner + rOuter)/2};
+
+  let start     = {...startDefault};
+  let dragging  = false;
+  let showPaths = true;
+  const paths   = [];    // Array [{pts: [ {x,y}, …], end:{x,y}}]
+
+  const STEP_SCALE = 3;       // Schrittweite (Standardabw.) in Pixeln
+  const MAX_STEPS  = 20000;   // Hard‑Limit gegen Endlosschleife
+
+  // ---------------- Hilfsfunktionen ----------------
+  function randn() {          // Box‑Muller (N(0,1))
+    let u=0, v=0;
+    while(u===0) u = Math.random();
+    while(v===0) v = Math.random();
+    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+  }
+
+  function dist(p) {
+    return Math.hypot(p.x - center.x, p.y - center.y);
+  }
+
+  function inDomain(p) {
+    const d = dist(p);
+    return d > rInner && d < rOuter;
+  }
+
+  function simulate() {
+    let p = {...start};
+    const pts = [p];
+
+    for (let i=0;i<MAX_STEPS;i++) {
+      const step = {x: randn()*STEP_SCALE, y: randn()*STEP_SCALE};
+      const cand = {x: p.x + step.x, y: p.y + step.y};
+      if (inDomain(cand)) {
+        pts.push(cand);
+        p = cand;
+      } else {
+        return {pts, end: p};   // letzte zulässige Position als Endpunkt
+      }
+    }
+    return {pts, end: p};
+  }
+
+  // ---------------- Zeichnen ----------------
+  function draw() {
+    ctx.clearRect(0,0,W,H);
+
+    // Annulus (gefüllt)
+    ctx.save();
+    ctx.fillStyle = 'rgba(100,100,200,0.1)';
+    ctx.beginPath();
+    ctx.arc(center.x, center.y, rOuter, 0, Math.PI*2);
+    ctx.arc(center.x, center.y, rInner, 0, Math.PI*2, true);  // Loch herausstanzen
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+    ctx.restore();
+
+    // Pfade
+    if (showPaths) {
+      ctx.lineWidth = 1.5;
+      ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+      paths.forEach(path => {
+        ctx.beginPath();
+        ctx.moveTo(path.pts[0].x, path.pts[0].y);
+        for (let i=1;i<path.pts.length;i++) ctx.lineTo(path.pts[i].x, path.pts[i].y);
+        ctx.stroke();
+      });
+    }
+
+    // Endpunkte
+    ctx.fillStyle = '#d33';
+    paths.forEach(({end}) => {
+      ctx.beginPath();
+      ctx.arc(end.x, end.y, 4, 0, Math.PI*2);
+      ctx.fill();
+    });
+
+    // Startpunkt
+    ctx.fillStyle = '#3a3';
+    ctx.beginPath();
+    ctx.arc(start.x, start.y, 6, 0, Math.PI*2);
+    ctx.fill();
+    ctx.strokeStyle = '#000';
+    ctx.stroke();
+  }
+
+  // ---------------- UI‑Events ----------------
+  document.getElementById('btnNew').addEventListener('click', () => {
+    paths.push(simulate());
+    draw();
+  });
+
+  document.getElementById('btnToggle').addEventListener('click', () => {
+    showPaths = !showPaths;
+    draw();
+  });
+
+  document.getElementById('btnReset').addEventListener('click', () => {
+    paths.length = 0;
+    draw();
+  });
+
+  // Drag & Drop für Startpunkt
+  canvas.addEventListener('pointerdown', e => {
+    const rect = canvas.getBoundingClientRect();
+    const pos  = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+    if (Math.hypot(pos.x - start.x, pos.y - start.y) < 10) {
+      dragging = true;
+      canvas.setPointerCapture(e.pointerId);
+    }
+  });
+
+  canvas.addEventListener('pointermove', e => {
+    if (!dragging) return;
+    const rect = canvas.getBoundingClientRect();
+    const pos  = {x: e.clientX - rect.left, y: e.clientY - rect.top};
+    if (inDomain(pos)) {
+      start.x = pos.x;
+      start.y = pos.y;
+      paths.length = 0;   // Pfade invalid → löschen
+      draw();
+    }
+  });
+
+  canvas.addEventListener('pointerup', e => {
+    dragging = false;
+    canvas.releasePointerCapture(e.pointerId);
+  });
+
+  // Initiales Rendering
+  draw();
+})();
+</script>
+</body>
+</html>
