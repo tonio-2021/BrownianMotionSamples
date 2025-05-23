@@ -3,312 +3,174 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Brownsche Bewegung – zwei verbundene Kreise</title>
-
+  <title>Domain Rendering Test</title>
   <style>
-    body{
-      margin:0; padding:0;
-      display:flex; justify-content:center; align-items:flex-start;
-      height:100vh; background:#f5f5f5; font-family:system-ui,sans-serif;
+    body {
+      margin: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 90vh;
+      background-color: #f0f0f0;
+      font-family: sans-serif;
     }
-    #wrapper{ display:flex; gap:1rem; margin:1rem; }
-    canvas{
-      border:1px solid #ccc; background:#fff;
-      box-shadow:0 2px 6px rgba(0,0,0,.1);
+    canvas {
+      border: 1px solid #555;
+      background-color: #fff;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
-    #controls{ display:flex; flex-direction:column; gap:.5rem; }
-    .btn{
-      padding:.5rem 1rem; font-size:.9rem; cursor:pointer;
-      border:1px solid #666; border-radius:.3rem; background:#eee;
-      transition:background .2s; text-align:left;
+    #errorMessage {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background-color: #ffdddd;
+      color: #d8000c;
+      padding: 10px;
+      border: 1px solid #d8000c;
+      border-radius: 5px;
+      display: none; /* Standardmäßig versteckt */
     }
-    .btn:hover{ background:#ddd; }
   </style>
 </head>
 <body>
-  <div id="wrapper">
-    <canvas id="domainCanvas" width="600" height="600"></canvas>
-
-    <div id="controls">
-      <button id="newPathBtn"   class="btn" title="Simuliere einen neuen Pfad ab demselben Startpunkt">Neuer Pfad</button>
-      <button id="newStartBtn"  class="btn" title="Wähle einen neuen zufälligen Startpunkt">Neuer Startpunkt</button>
-      <button id="togglePathsBtn" class="btn" title="Zeige/verstecke vollständige Pfade">Pfade Verstecken</button>
-      <button id="resetBtn"     class="btn" title="Setze Startpunkt und alle Pfade zurück">Reset</button>
-    </div>
-  </div>
+  <canvas id="domainCanvas" width="600" height="600"></canvas>
+  <div id="errorMessage"></div>
 
   <script>
-  // ---------- Canvas-Konstanten ----------
-  const canvas   = document.getElementById('domainCanvas');
-  const ctx      = canvas.getContext('2d');
-  const WIDTH    = canvas.width;
-  const HEIGHT   = canvas.height;
+    // ---------- Canvas-Konstanten ----------
+    const canvas = document.getElementById('domainCanvas');
+    const ctx = canvas.getContext('2d');
+    const WIDTH = canvas.width;
+    const HEIGHT = canvas.height;
+    const errorMessageDiv = document.getElementById('errorMessage');
 
-  // ---------- Geometrie ----------
-  const R     = 0.4;   // Kreisradius
-  const D     = 0.7;   // Abstand der Kreismittelpunkte
-  const G_W   = 0.08;  // Gangbreite (h)
-  // const G_L   = 0.20;  // Ganglänge (L) - This parameter is problematic as used in original inDomain.
-                        // The corridor length is now derived from R, D, G_W.
+    // ---------- Geometrie-Parameter ----------
+    const R     = 0.4;   // Kreisradius
+    const D     = 0.7;   // Abstand der Kreismittelpunkte (C1 bis C2)
+    const G_W   = 0.08;  // Gangbreite (Korridorbreite)
 
-  const C1 = [ -D/2, 0 ]; // Center of left circle
-  const C2 = [  D/2, 0 ]; // Center of right circle
+    // Mittelpunkte der Kreise (Weltkoordinaten)
+    // C1 ist links, C2 ist rechts, wenn D positiv
+    const C1 = [ -D / 2, 0 ]; // Mittelpunkt linker Kreis
+    const C2 = [  D / 2, 0 ]; // Mittelpunkt rechter Kreis
 
-  const SCALE = WIDTH * 0.45; // Welt-→Canvas-Skalierung
+    // Skalierungsfaktor und Transformationsfunktionen
+    const SCALE = WIDTH * 0.45; // Skaliert Weltkoordinaten auf Canvas-Pixel
 
-  const toX = x => WIDTH/2  + x * SCALE;
-  const toY = y => HEIGHT/2 - y * SCALE; // y is inverted for canvas
+    // Konvertiert Welt-x in Canvas-x
+    const toX = worldX => WIDTH / 2  + worldX * SCALE;
+    // Konvertiert Welt-y in Canvas-y (y-Achse im Canvas ist invertiert)
+    const toY = worldY => HEIGHT / 2 - worldY * SCALE;
 
-  // ---------- Rand + Füllung des Domain-Gebiets ----------
-  function drawDomain(){
-    ctx.clearRect(0,0,WIDTH,HEIGHT);
-    ctx.lineWidth   = 2;
-    ctx.strokeStyle = '#666';
-    ctx.fillStyle   = '#f4f4f4';
+    // ---------- Funktion zum Zeichnen des Domain-Gebiets ----------
+    function drawDomain() {
+      ctx.clearRect(0, 0, WIDTH, HEIGHT); // Canvas leeren
 
-    const halfH = G_W/2; // h/2
+      // Zeichenstile
+      ctx.lineWidth   = 3;          // Linienbreite für den Rand
+      ctx.strokeStyle = '#FF0000';  // Randfarbe (Rot für gute Sichtbarkeit)
+      ctx.fillStyle   = '#E0E0E0';  // Füllfarbe des Gebiets (Hellgrau)
 
-    if (halfH >= R) {
-        // Corridor width is too large for the circle radius, domain is ill-defined or empty.
+      const halfH = G_W / 2; // Halbe Gangbreite
+
+      // Überprüfung der geometrischen Gültigkeit
+      if (halfH >= R) {
+        const errorMsg = `Geometrie ungültig: Gangbreite (G_W=${G_W}) ist zu groß für den Kreisradius (R=${R}). Der Gang darf nicht breiter als der Durchmesser sein.`;
+        console.error(errorMsg);
+        errorMessageDiv.textContent = errorMsg;
+        errorMessageDiv.style.display = 'block';
+        // Optional: Einen Hinweis auf dem Canvas zeichnen
         ctx.font = "14px Arial";
-        ctx.fillStyle = "red";
+        ctx.fillStyle = "blue";
         ctx.textAlign = "center";
-        ctx.fillText("Geometrie ungültig: Gangbreite (G_W) zu groß für Kreisradius (R).", WIDTH/2, HEIGHT/2);
-        return;
-    }
-    const dxCut = Math.sqrt(R*R - halfH*halfH); // x-distance from circle center to corridor connection
-
-    // Path2D for the *outer* border as a single continuous path
-    const border = new Path2D();
-
-    // Points defining the corridor connections:
-    // Top-right of C1's opening / Top-left of corridor
-    const P_C1_TR_x = C1[0] + dxCut;
-    const P_C1_TR_y = halfH;
-    // Top-left of C2's opening / Top-right of corridor
-    const P_C2_TL_x = C2[0] - dxCut;
-    const P_C2_TL_y = halfH;
-    // Bottom-left of C2's opening / Bottom-right of corridor
-    const P_C2_BL_x = C2[0] - dxCut;
-    const P_C2_BL_y = -halfH;
-    // Bottom-right of C1's opening / Bottom-left of corridor
-    const P_C1_BR_x = C1[0] + dxCut;
-    const P_C1_BR_y = -halfH;
-
-    // Angles for the arcs (atan2(y,x) relative to circle center)
-    // For C1 (left circle):
-    const ang_C1_TR = Math.atan2(P_C1_TR_y - C1[1], P_C1_TR_x - C1[0]); // Angle of top-right connection point
-    const ang_C1_BR = Math.atan2(P_C1_BR_y - C1[1], P_C1_BR_x - C1[0]); // Angle of bottom-right connection point
-
-    // For C2 (right circle):
-    const ang_C2_TL = Math.atan2(P_C2_TL_y - C2[1], P_C2_TL_x - C2[0]); // Angle of top-left connection point
-    const ang_C2_BL = Math.atan2(P_C2_BL_y - C2[1], P_C2_BL_x - C2[0]); // Angle of bottom-left connection point
-
-    border.moveTo(toX(P_C1_TR_x), toY(P_C1_TR_y));       // Start at top-left of corridor segment
-    border.lineTo(toX(P_C2_TL_x), toY(P_C2_TL_y));       // Line: Top edge of corridor
-
-    // Arc for the right circle (from P_C2_TL to P_C2_BL, clockwise along outer edge)
-    border.arc(toX(C2[0]), toY(C2[1]), R * SCALE, ang_C2_TL, ang_C2_BL, false); // false for clockwise
-
-    border.lineTo(toX(P_C1_BR_x), toY(P_C1_BR_y));       // Line: Bottom edge of corridor
-
-    // Arc for the left circle (from P_C1_BR to P_C1_TR, clockwise along outer edge)
-    border.arc(toX(C1[0]), toY(C1[1]), R * SCALE, ang_C1_BR, ang_C1_TR, false); // false for clockwise
-
-    border.closePath(); // Close the path to ensure it's a single shape
-
-    // Zeichnen
-    ctx.fill(border);
-    ctx.stroke(border);
-  }
-
-  // ---------- Punkt-Inside-Domain ----------
-  function inDomain(x,y){
-    const halfH = G_W/2;
-    const R_squared = R*R;
-
-    // Check if R is too small for G_W (corridor width)
-    if (halfH >= R) { // If G_W/2 == R, dxCut is 0. If G_W/2 > R, sqrt is NaN.
-        return false; // Domain is ill-defined or empty
-    }
-    const dxCut = Math.sqrt(R_squared - halfH*halfH);
-
-    // x-coordinates where the "mouths" of the Pac-Man shapes open
-    const x_mouth_C1_opens_at = C1[0] + dxCut; // For left circle, mouth is to its right
-    const x_mouth_C2_opens_at = C2[0] - dxCut; // For right circle, mouth is to its left
-
-    // 1. Check if in the central corridor/overlap region
-    // This region is defined by abs(y) <= halfH.
-    // Its x-span depends on whether circles overlap or have a gap bridged by corridor.
-    // x_mouth_C2_opens_at will be less than x_mouth_C1_opens_at if circles overlap at mouths or form a channel.
-    if (Math.abs(y) <= halfH) {
-        // If D < 2*dxCut (current parameters: 0.7 < ~0.796), then C1_opens > C2_opens (mouths overlap)
-        // Corridor is from x_mouth_C2_opens_at to x_mouth_C1_opens_at
-        // If D > 2*dxCut, then C1_opens < C2_opens (gap between mouths)
-        // Corridor is from x_mouth_C1_opens_at to x_mouth_C2_opens_at
-        const corridor_x_min = Math.min(x_mouth_C1_opens_at, x_mouth_C2_opens_at);
-        const corridor_x_max = Math.max(x_mouth_C1_opens_at, x_mouth_C2_opens_at);
-
-        if (x >= corridor_x_min && x <= corridor_x_max) {
-            // If D == 2*dxCut, then x_mouth_C1_opens_at == x_mouth_C2_opens_at, corridor has zero length here.
-            // This check correctly covers the actual connecting channel.
-            return true;
-        }
-    }
-
-    // 2. Check if in the left "Pac-Man" body
-    const d1_sq = (x - C1[0])*(x - C1[0]) + (y - C1[1])*(y - C1[1]);
-    if (d1_sq <= R_squared) {
-        // Point is within the radius of C1. Check it's not in C1's "mouth".
-        // Mouth of C1 is where x > x_mouth_C1_opens_at AND abs(y) <= halfH.
-        if (!(x > x_mouth_C1_opens_at && Math.abs(y) <= halfH)) {
-            return true;
-        }
-    }
-
-    // 3. Check if in the right "Pac-Man" body
-    const d2_sq = (x - C2[0])*(x - C2[0]) + (y - C2[1])*(y - C2[1]);
-    if (d2_sq <= R_squared) {
-        // Point is within the radius of C2. Check it's not in C2's "mouth".
-        // Mouth of C2 is where x < x_mouth_C2_opens_at AND abs(y) <= halfH.
-        if (!(x < x_mouth_C2_opens_at && Math.abs(y) <= halfH)) {
-            return true;
-        }
-    }
-
-    return false;
-  }
-
-  // ---------- Startpunkterzeugung (Rejection) ----------
-  function randomStart(){
-    // Bounding box for the entire domain
-    const minX = C1[0] - R;
-    const maxX = C2[0] + R;
-    const minY = -R;
-    const maxY = R;
-
-    while(true){
-      const x = minX + Math.random() * (maxX - minX);
-      const y = minY + Math.random() * (maxY - minY);
-      if(inDomain(x,y)) return [x,y];
-    }
-  }
-
-  // ---------- Standardnormal-Zufall (Box–Muller) ----------
-  function randn(){
-    let u=0,v=0;
-    while(u === 0) u=Math.random(); // Ensure u is not 0 to avoid log(0)
-    while(v === 0) v=Math.random(); // Technically v doesn't need to be non-zero for cos, but good practice
-    return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
-  }
-
-  // ---------- Brownsche Simulation bis Austritt ----------
-  function simulateBrownian(x0, dt=.001, maxSteps=1e5){
-    const path=[x0.slice()]; // Use slice to copy the start point array
-    let [x,y]=x0;
-    for(let i=0;i<maxSteps;i++){
-      const dx = Math.sqrt(dt)*randn();
-      const dy = Math.sqrt(dt)*randn();
-      const nx = x + dx;
-      const ny = y + dy;
-      if(!inDomain(nx,ny)) { // Particle hits absorbing boundary
-        // Optional: add the point just outside the boundary for a more complete path visual
-        // path.push([nx,ny]);
-        break;
+        ctx.fillText("Geometrie ungültig: G_W zu groß.", WIDTH/2, HEIGHT/2 - 20);
+        ctx.fillText(`G_W (${G_W.toFixed(3)}) >= R (${R.toFixed(3)})`, WIDTH/2, HEIGHT/2);
+        return; // Zeichnen abbrechen
       }
-      x=nx; y=ny;
-      path.push([x,y]);
+      errorMessageDiv.style.display = 'none'; // Fehlermeldung ausblenden, falls vorher sichtbar
+
+      // Berechnung von dxCut: x-Distanz vom Kreismittelpunkt zum Punkt,
+      // an dem der Kreisbogen in den geraden Gang übergeht.
+      // Basiert auf dem Satz des Pythagoras: R^2 = dxCut^2 + halfH^2
+      const R_squared = R * R;
+      const halfH_squared = halfH * halfH;
+      const dxCut_squared = R_squared - halfH_squared;
+
+      if (dxCut_squared < 0) { // Sollte durch halfH >= R abgedeckt sein, aber als extra Sicherheit
+        const errorMsg = `Fehler bei der Berechnung: dxCut_squared (${dxCut_squared.toFixed(3)}) ist negativ. R=${R}, halfH=${halfH}.`;
+        console.error(errorMsg);
+        errorMessageDiv.textContent = errorMsg;
+        errorMessageDiv.style.display = 'block';
+        ctx.font = "14px Arial";
+        ctx.fillStyle = "orange";
+        ctx.textAlign = "center";
+        ctx.fillText("Berechnungsfehler für dxCut.", WIDTH/2, HEIGHT/2);
+        return; // Zeichnen abbrechen
+      }
+      const dxCut = Math.sqrt(dxCut_squared);
+
+      // Koordinaten der "Eckpunkte" des Gangs (Weltkoordinaten)
+      // TR = Top-Right, TL = Top-Left, BR = Bottom-Right, BL = Bottom-Left
+      // Bezogen auf den jeweiligen Kreis und die Öffnung des Gangs
+      const P_C1_TR_x = C1[0] + dxCut; // Öffnung des linken Kreises, oben rechts
+      const P_C1_TR_y = halfH;
+      const P_C2_TL_x = C2[0] - dxCut; // Öffnung des rechten Kreises, oben links
+      const P_C2_TL_y = halfH;
+
+      const P_C1_BR_x = C1[0] + dxCut; // Öffnung des linken Kreises, unten rechts
+      const P_C1_BR_y = -halfH;
+      const P_C2_BL_x = C2[0] - dxCut; // Öffnung des rechten Kreises, unten links
+      const P_C2_BL_y = -halfH;
+
+      // Winkel für die Kreisbögen (benötigt für ctx.arc)
+      // Winkel werden von der positiven x-Achse gegen den Uhrzeigersinn gemessen.
+      // Math.atan2(y, x) gibt den Winkel in Radiant zurück.
+      const ang_C1_TR = Math.atan2(P_C1_TR_y - C1[1], P_C1_TR_x - C1[0]); // Startwinkel für Bogen C1 (unten) -> Endwinkel (oben)
+      const ang_C1_BR = Math.atan2(P_C1_BR_y - C1[1], P_C1_BR_x - C1[0]);
+
+      const ang_C2_TL = Math.atan2(P_C2_TL_y - C2[1], P_C2_TL_x - C2[0]); // Startwinkel für Bogen C2 (oben) -> Endwinkel (unten)
+      const ang_C2_BL = Math.atan2(P_C2_BL_y - C2[1], P_C2_BL_x - C2[0]);
+
+      // Pfadkonstruktion mit direkten Kontextmethoden
+      ctx.beginPath(); // Neuen Pfad beginnen
+
+      // Vom oberen rechten Punkt der C1-Öffnung
+      ctx.moveTo(toX(P_C1_TR_x), toY(P_C1_TR_y));
+      // Linie zum oberen linken Punkt der C2-Öffnung
+      ctx.lineTo(toX(P_C2_TL_x), toY(P_C2_TL_y));
+      // Kreisbogen für den rechten Kreis (C2)
+      // arc(x, y, radius, startAngle, endAngle, anticlockwise)
+      // Wir zeichnen den äußeren Bogen im Uhrzeigersinn (anticlockwise = false)
+      ctx.arc(toX(C2[0]), toY(C2[1]), R * SCALE, ang_C2_TL, ang_C2_BL, false);
+      // Linie zum unteren rechten Punkt der C1-Öffnung (durch C2s unteren linken Punkt)
+      ctx.lineTo(toX(P_C1_BR_x), toY(P_C1_BR_y));
+      // Kreisbogen für den linken Kreis (C1)
+      ctx.arc(toX(C1[0]), toY(C1[1]), R * SCALE, ang_C1_BR, ang_C1_TR, false);
+
+      ctx.closePath(); // Pfad schließen (verbindet aktuellen Punkt mit Startpunkt)
+
+      // Form füllen und Rand zeichnen
+      ctx.fill();
+      ctx.stroke();
+
+      // console.log("Domain gezeichnet.");
+      // console.log(`C1: [${C1[0]}, ${C1[1]}], C2: [${C2[0]}, ${C2[1]}]`);
+      // console.log(`P_C1_TR: [${P_C1_TR_x.toFixed(3)}, ${P_C1_TR_y.toFixed(3)}], P_C2_TL: [${P_C2_TL_x.toFixed(3)}, ${P_C2_TL_y.toFixed(3)}]`);
+      // console.log(`P_C1_BR: [${P_C1_BR_x.toFixed(3)}, ${P_C1_BR_y.toFixed(3)}], P_C2_BL: [${P_C2_BL_x.toFixed(3)}, ${P_C2_BL_y.toFixed(3)}]`);
+      // console.log(`ang_C1_BR: ${ang_C1_BR.toFixed(3)} rad, ang_C1_TR: ${ang_C1_TR.toFixed(3)} rad`);
+      // console.log(`ang_C2_TL: ${ang_C2_TL.toFixed(3)} rad, ang_C2_BL: ${ang_C2_BL.toFixed(3)} rad`);
     }
-    return path;
-  }
 
-  // ---------- Zeichenroutine Pfade ----------
-  const colours = ['#e41a1c','#377eb8','#4daf4a','#984ea3','#ff7f00','#a65628'];
-  let startPoint=null, paths=[], showPaths=true;
+    // ---------- Initiales Rendering ----------
+    // Rufen Sie die Zeichenfunktion auf, um die Domain beim Laden der Seite darzustellen.
+    drawDomain();
 
-  function drawAll(){
-    drawDomain(); // This will clear canvas and draw the base shape
+    // Sie können hier die Geometrieparameter ändern und drawDomain() erneut aufrufen,
+    // um die Änderungen zu sehen, z.B. in der Browser-Konsole:
+    // R = 0.3; D = 0.5; G_W = 0.1; drawDomain();
+    // G_W = 0.81; drawDomain(); // Beispiel für ungültige Geometrie
 
-    if (paths.length > 0 && startPoint) { // Only draw paths if there are any
-        paths.forEach( (p,i)=>{
-          const col = colours[i % colours.length];
-
-          /* Pfad */
-          if(showPaths && p.length > 1){ // Ensure path has at least two points to draw a line
-            ctx.strokeStyle=col; ctx.lineWidth=1.2;
-            ctx.beginPath();
-            ctx.moveTo( toX(p[0][0]), toY(p[0][1]) );
-            p.slice(1).forEach(pt=>ctx.lineTo(toX(pt[0]), toY(pt[1])));
-            ctx.stroke();
-          }
-
-          /* Start / Endpunkte */
-          const mark = ([px,py], r, fillStyle)=>{
-            ctx.beginPath();
-            ctx.arc(toX(px),toY(py),r,0,2*Math.PI);
-            ctx.fillStyle=fillStyle;
-            ctx.fill();
-          };
-
-          if (p.length > 0) {
-            mark(p[0],             6, '#000'); // Start point of this specific path
-            mark(p[p.length-1],    4, col);    // End point of this specific path
-          }
-        });
-    } else if (startPoint) { // If there's a startPoint but no paths yet, draw the startPoint
-        const mark = ([px,py], r, fillStyle)=>{
-            ctx.beginPath();
-            ctx.arc(toX(px),toY(py),r,0,2*Math.PI);
-            ctx.fillStyle=fillStyle;
-            ctx.fill();
-        };
-        mark(startPoint, 6, '#000');
-    }
-  }
-
-  // ---------- Button-Callbacks ----------
-  document.getElementById('newPathBtn').onclick = ()=>{
-    if(!startPoint) {
-        startPoint = randomStart();
-        if (!startPoint) { // Could happen if randomStart fails (e.g. invalid geometry)
-            console.error("Failed to generate a random start point. Check geometry.");
-            return;
-        }
-    }
-    paths.push( simulateBrownian(startPoint) );
-    if (paths.length > colours.length * 3) { // Limit paths to avoid performance issues / too many colours
-        paths.shift(); // Remove oldest path
-    }
-    drawAll();
-  };
-
-  document.getElementById('newStartBtn').onclick = ()=>{
-    startPoint = randomStart();
-    if (!startPoint) {
-        console.error("Failed to generate a random start point for NewStartBtn. Check geometry.");
-        return;
-    }
-    // Paths are not cleared here, new paths will start from this new point.
-    // If you want to clear old paths when getting a new start point, add: paths = [];
-    drawAll();
-  };
-
-  document.getElementById('togglePathsBtn').onclick = e=>{
-    showPaths = !showPaths;
-    e.target.textContent = showPaths ? 'Pfade Verstecken' : 'Pfade Zeigen';
-    drawAll();
-  };
-
-  document.getElementById('resetBtn').onclick = ()=>{
-    startPoint=null;
-    paths=[];
-    showPaths=true;
-    document.getElementById('togglePathsBtn').textContent='Pfade Verstecken';
-    drawAll(); // Will just draw the empty domain
-  };
-
-  // ---------- Initiales Rendering ----------
-  drawDomain(); // Initial call to draw the domain when the page loads
   </script>
 </body>
 </html>
