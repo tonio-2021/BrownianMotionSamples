@@ -1,56 +1,251 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="utf-8">
-  <title>Brownscher Pfad‑Simulator – Auswahl</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8">
+  <title>Monte-Carlo Applet für den Dirichlet-Problemlöser</title>
   <style>
-    body{
-      margin:0;
-      display:flex;
-      flex-direction:column;
-      align-items:center;
-      gap:1rem;
-      padding:1rem;
-      font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-      background:#fafafa;
-    }
-    #nav{display:flex;gap:.5rem;flex-wrap:wrap}
-    button{
-      padding:.5rem 1rem;
-      border:none;
-      border-radius:6px;
-      background:#444;color:#fff;font-size:1rem;
-      cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,.2);
-      transition:background .2s;
-    }
-    button.active,button:hover{background:#222;}
-    iframe{border:1px solid #ccc;border-radius:12px;width:600px;height:700px;}
+    body { font-family: Arial, sans-serif; margin: 20px; text-align: center; }
+    #canvas { background: #fff; border: 1px solid #333; cursor: grab; }
+    #controls { margin-top: 15px; }
+    label, input, button { font-size: 1rem; margin: 0 5px; }
+    #info { margin-top: 10px; font-size: 1.1rem; }
+    #calcInfo { margin-top: 5px; font-style: italic; }
   </style>
 </head>
 <body>
-  <h1>Brownscher Pfad‑Simulator</h1>
+  <h1>Probabilistische Lösung des Dirichlet-Problems</h1>
+  <!-- Canvas für Domain und Pfade -->
+  <canvas id="canvas" width="600" height="600"></canvas>
 
-  <div id="nav">
-    <button data-file="annulus.html" class="active">Annulus</button>
-    <button data-file="slit_disc.html">Schlitzscheibe</button>
+  <div id="controls">
+    <!-- Parameter: Anzahl Pfade -->
+    <label for="N">Anzahl Pfade N:</label>
+    <input type="number" id="N" value="200" step="50" min="10" max="2000">
+    <!-- Parameter: Wert der Randfunktion im Innenkreis -->
+    <label for="innerValue">Innenrand-Wert:</label>
+    <input type="number" id="innerValue" value="100" step="1">
+    <!-- Simulation starten -->
+    <button id="simulateBtn">Simuliere Pfade</button>
+    <!-- Pfade ein-/ausblenden -->
+    <button id="togglePathsBtn">Pfade ausblenden</button>
   </div>
 
-  <iframe id="viewer" src="annulus.html" title="Simulation"></iframe>
+  <div id="info">
+    <div id="coords">Startpunkt: (0.00, 0.00)</div>
+    <div id="exactVal">Exakter Wert: 0.0000</div>
+    <div id="approxVal">Approximierter Wert: –</div>
+    <div id="innerCount">Innenrand-Treffer: 0</div>
+    <div id="outerCount">Außenrand-Treffer: 0</div>
+    <!-- Berechnungsdetails: Randfunktionen und Mittelwert -->
+    <div id="calcInfo">
+      Verwendete Randfunktionen:<br>
+      • Außenrand: f(θ) = sin(θ)<br>
+      • Innenrand: f ≡ <span id="innerDisplay">100</span><br>
+      <br>
+      Berechnung des Mittelwerts:<br>
+      ê = (1/N) · Σ_{k=1}^N f(exit_k)
+    </div>
+  </div>
 
   <script>
-  (() => {
-    const viewer = document.getElementById('viewer');
-    const buttons = document.querySelectorAll('#nav button');
+    // === PARAMETER (zum Anpassen) ===
+    const scale = 250;        // 1 Einheit = 250px
+    let holeRadius = 0.0002;    // Radius vom kleinen Loch im Zentrum
+    const sigma = 0.005;      // Schrittweite der Brown'schen Bewegung
+    // ================================
 
-    buttons.forEach(btn => {
-      btn.addEventListener('click', () => {
-        const file = btn.dataset.file;
-        viewer.src = file;
-        buttons.forEach(b => b.classList.toggle('active', b === btn));
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+    const centerX = W/2, centerY = H/2;
+
+    // Startpunkt initial
+    let startPoint = { x: 0.0, y: 0.0 };
+    let dragging = false;
+    let showPaths = true;
+    let paths = [];
+
+    // DOM-Elemente
+    const Ninput = document.getElementById('N');
+    const innerInput = document.getElementById('innerValue');
+    const innerDisplay = document.getElementById('innerDisplay');
+    const simulateBtn = document.getElementById('simulateBtn');
+    const togglePathsBtn = document.getElementById('togglePathsBtn');
+    const coordsDiv = document.getElementById('coords');
+    const exactDiv = document.getElementById('exactVal');
+    const approxDiv = document.getElementById('approxVal');
+    const innerCountDiv = document.getElementById('innerCount');
+    const outerCountDiv = document.getElementById('outerCount');
+
+    // Zeichnet Einheitskreis, Loch und Achsen
+    function drawDomain() {
+      ctx.clearRect(0,0,W,H);
+      // Außenkreis
+      ctx.strokeStyle = '#0077cc'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(centerX, centerY, scale, 0, 2*Math.PI); ctx.stroke();
+      // Innenloch
+      ctx.strokeStyle = '#cc0000'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(centerX, centerY, holeRadius*scale, 0, 2*Math.PI); ctx.stroke();
+      // Achsen
+      ctx.strokeStyle = '#444'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, centerY); ctx.lineTo(W, centerY);
+      ctx.moveTo(centerX, 0); ctx.lineTo(centerX, H);
+      ctx.stroke();
+    }
+
+    // Hilfsfunktion: (x,y) → Canvas-Koordinaten
+    function toCanvas(x,y) {
+      return { px: centerX + x*scale, py: centerY - y*scale };
+    }
+
+    // Zeichnet den roten Startpunkt
+    function drawStartPoint() {
+      const {px,py} = toCanvas(startPoint.x, startPoint.y);
+      ctx.fillStyle = 'red'; ctx.beginPath(); ctx.arc(px,py,6,0,2*Math.PI); ctx.fill();
+    }
+
+    // Aktualisiert die Info-Anzeige
+    function updateInfo() {
+      coordsDiv.textContent = `Startpunkt: (${startPoint.x.toFixed(2)}, ${startPoint.y.toFixed(2)})`;
+      exactDiv.textContent = `Exakter Wert: ${startPoint.y.toFixed(4)}`;
+      approxDiv.textContent = `Approximierter Wert: –`;
+      innerCountDiv.textContent = `Innenrand-Treffer: 0`;
+      outerCountDiv.textContent = `Außenrand-Treffer: 0`;
+      innerDisplay.textContent = innerInput.value;
+    }
+
+    // Randfunktion außen
+    function fOuter(theta) {
+      return Math.sin(theta);
+    }
+    // Randfunktion innen konstant (dynamisch)
+    function fInner() {
+      return parseFloat(innerInput.value);
+    }
+
+    // Zufallszahl N(0,1) via Box-Muller
+    function randomNormal() {
+      let u=0,v=0; while(u===0) u=Math.random(); while(v===0) v=Math.random();
+      return Math.sqrt(-2*Math.log(u)) * Math.cos(2*Math.PI*v);
+    }
+
+    // Simuliere einen Pfad; gib Pfad und Exit-Info zurück
+    function simulateExitPath(x0,y0) {
+      const path = [{x:x0,y:y0}];
+      let x=x0, y=y0;
+      while(true) {
+        const dx = sigma * randomNormal();
+        const dy = sigma * randomNormal();
+        const xn = x + dx, yn = y + dy;
+        // Treffer innen
+        if(xn*xn+yn*yn <= holeRadius*holeRadius) {
+          return { path, exit: { type: 'inner' } };
+        }
+        // Treffer außen
+        if(xn*xn+yn*yn >= 1) {
+          const theta = Math.atan2(yn, xn);
+          path.push({x:xn,y:yn});
+          return { path, exit: { type: 'outer', x: xn, y: yn, theta } };
+        }
+        x = xn; y = yn;
+        path.push({x,y});
+      }
+    }
+
+    // Zeichnet einen Pfad auf das Canvas
+    function drawSinglePath(path) {
+      ctx.strokeStyle = 'rgba(0,0,0,0.2)'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      path.forEach((p,i) => {
+        const {px,py} = toCanvas(p.x,p.y);
+        i===0 ? ctx.moveTo(px,py) : ctx.lineTo(px,py);
       });
+      ctx.stroke();
+    }
+
+    // Markiert Exit-Punkte
+    function markExitPoint(x,y,inner=false) {
+      const {px,py} = toCanvas(x,y);
+      ctx.fillStyle = inner ? 'green' : 'blue';
+      ctx.beginPath(); ctx.arc(px,py,4,0,2*Math.PI); ctx.fill();
+    }
+
+    // Simulation aller Pfade und Auswertung
+    async function simulatePaths() {
+      const N = parseInt(Ninput.value,10);
+      paths = [];
+      drawDomain(); drawStartPoint();
+      let sum = 0, innerCount = 0, outerCount = 0;
+      for(let i=0; i<N; i++) {
+        const result = simulateExitPath(startPoint.x, startPoint.y);
+        paths.push(result);
+        if(showPaths) drawSinglePath(result.path);
+        if(result.exit.type === 'inner') {
+          innerCount++;
+          sum += fInner();
+          const last = result.path[result.path.length-1];
+          markExitPoint(last.x, last.y, true);
+        } else {
+          outerCount++;
+          sum += fOuter(result.exit.theta);
+          markExitPoint(result.exit.x, result.exit.y);
+        }
+        if(i % 100 === 0) await new Promise(requestAnimationFrame);
+      }
+      const avg = sum / N;
+      approxDiv.textContent = `Approximierter Wert: ${avg.toFixed(4)}`;
+      innerCountDiv.textContent = `Innenrand-Treffer: ${innerCount}`;
+      outerCountDiv.textContent = `Außenrand-Treffer: ${outerCount}`;
+    }
+
+    // Re-Render ohne Neu-Simulation
+    function render() {
+      drawDomain();
+      if(showPaths) paths.forEach(r => {
+        drawSinglePath(r.path);
+        if(r.exit.type === 'inner') {
+          const last = r.path.slice(-1)[0];
+          markExitPoint(last.x, last.y, true);
+        } else {
+          markExitPoint(r.exit.x, r.exit.y);
+        }
+      });
+      drawStartPoint();
+    }
+
+    // Mouse-Events für Startpunkt-Drag
+    canvas.addEventListener('mousedown', e => {
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+      const dx = (mx-centerX)/scale - startPoint.x;
+      const dy = (centerY-my)/scale - startPoint.y;
+      if(dx*dx+dy*dy < 0.02) dragging = true;
     });
-  })();
+    canvas.addEventListener('mousemove', e => {
+      if(!dragging) return;
+      const rect = canvas.getBoundingClientRect();
+      let nx = (e.clientX - rect.left - centerX)/scale;
+      let ny = (centerY - (e.clientY - rect.top))/scale;
+      const r2 = nx*nx + ny*ny;
+      if(r2 > holeRadius*holeRadius && r2 < 1) {
+        startPoint.x = nx; startPoint.y = ny;
+        paths = []; showPaths = true; togglePathsBtn.textContent = 'Pfade ausblenden';
+        updateInfo(); render(); approxDiv.textContent = 'Approximierter Wert: –';
+      }
+    });
+    window.addEventListener('mouseup', () => { dragging = false; });
+
+    // Button-Events
+    simulateBtn.addEventListener('click', () => simulatePaths());
+    togglePathsBtn.addEventListener('click', () => {
+      showPaths = !showPaths;
+      togglePathsBtn.textContent = showPaths ? 'Pfade ausblenden' : 'Pfade anzeigen';
+      render();
+    });
+
+    // Initialisierung
+    updateInfo(); render();
   </script>
 </body>
 </html>
